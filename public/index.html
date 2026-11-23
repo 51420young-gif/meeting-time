@@ -153,24 +153,21 @@ var HOLI={'2026-12-25':'行憲紀念日','2027-01-01':'元旦'};
 var H_ALL=[9,10,11,12,13,14,15,16,17,18,19,20,21], H_EVE=[19,20,21];
 var FREQ=[{n:0,t:'每週'},{n:1,t:'每月第 1 個'},{n:2,t:'每月第 2 個'},{n:3,t:'每月第 3 個'},{n:4,t:'每月第 4 個'},{n:9,t:'每月最後一個'}];
 var ui={tab:'fill',draft:null,myName:'',myNote:'',nameLoaded:false,msg:'',msgCls:'',pick:null,loading:true,offline:false,offReason:'',
-  nt:null,code:'',busy:false,awF:'',awT:'',awTitle:''};
+  nt:null,code:'',busy:false,boundKey:'',boundRaw:'',boundSaved:false,binding:false,awF:'',awT:'',awTitle:''};
 function newNt(o){o=o||{};return {title:'',rules:[],scope:'share',kind:o.kind||'week',wds:[],n:o.n||0,f:o.f||19,t:o.t||22,allday:!!o.allday,d1:'',d2:'',open:true};}
 ui.nt=newNt({});ui.nt.open=false;
 var db=null,uid=null,owner=false,TPL={},paint=null,TOKEN=null,ADMIN='';
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 (function(){
-  var q=new URLSearchParams(location.search),me=q.get('me'),ad=q.get('admin');
-  if(me&&/^[A-Za-z0-9_-]{20,64}$/.test(me))lsSet('mt-token',me);
+  var q=new URLSearchParams(location.search),ad=q.get('admin');
   if(ad)lsSet('mt-admin',ad);
-  TOKEN=lsGet('mt-token');
-  if(!TOKEN||!/^[A-Za-z0-9_-]{20,64}$/.test(TOKEN)){var a=new Uint8Array(24);crypto.getRandomValues(a);TOKEN=Array.from(a,function(b){return 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b%64];}).join('');lsSet('mt-token',TOKEN);}
   ADMIN=lsGet('mt-admin')||'';
-  if(me||ad){try{history.replaceState(null,'',location.pathname);}catch(e){}}
+  if(ad||q.get('me')){try{history.replaceState(null,'',location.pathname);}catch(e){}}
 })();
-function myLink(){return location.origin+location.pathname+'?me='+TOKEN;}
+function nkey(n){return String(n||'').trim().replace(/\s+/g,'').toLowerCase();}
 function api(method,path,body){
-  var h={'x-token':TOKEN};if(ADMIN)h['x-admin']=ADMIN;if(body)h['content-type']='application/json';
+  var h={};if(ui.boundRaw)h['x-name']=encodeURIComponent(ui.boundRaw);if(ADMIN)h['x-admin']=ADMIN;if(body)h['content-type']='application/json';
   return fetch('/api/'+path,{method:method,headers:h,body:body?JSON.stringify(body):undefined,cache:'no-store'}).then(function(r){
     return r.json().catch(function(){return {};}).then(function(j){if(!r.ok){var e=new Error(j.error||('http_'+r.status));e.code=j.error||r.status;throw e;}return j;});
   });
@@ -254,14 +251,14 @@ var autoT=null;
 function scheduleAuto(){
   if(autoT)clearTimeout(autoT);
   if(ui.loading||ui.offline)return;
-  if(!ui.myName.trim()){ui.msg='填好最上面的名字後，就會自動儲存';ui.msgCls='warn';return;}
+  if(!ui.boundKey){ui.msg='填好最上面的名字後，就會自動儲存';ui.msgCls='warn';return;}
   ui.msg='修改中…停 2 秒會自動儲存';ui.msgCls='';
   autoT=setTimeout(function(){autoT=null;if(paint||ui.busy){scheduleAuto();return;}save(true);},2000);
 }
 function saveDraft(){scheduleAuto();saveDraftOnly();}
-function saveDraftOnly(){try{localStorage.setItem('mtx3-draft',JSON.stringify({p:ui.draft,n:ui.myName,note:ui.myNote}));}catch(e){}}
-function readDraft(){try{return JSON.parse(localStorage.getItem('mtx3-draft')||'null');}catch(e){return null;}}
-function clearDraft(){try{localStorage.removeItem('mtx3-draft');}catch(e){}}
+function saveDraftOnly(){if(!ui.boundKey)return;try{localStorage.setItem('mtx4-draft',JSON.stringify({p:ui.draft,k:ui.boundKey,note:ui.myNote}));}catch(e){}}
+function readDraft(){try{return JSON.parse(localStorage.getItem('mtx4-draft')||'null');}catch(e){return null;}}
+function clearDraft(){try{localStorage.removeItem('mtx4-draft');}catch(e){}}
 
 // ---- analysis ----
 function analyze(){
@@ -316,12 +313,12 @@ function renderFill(){
   h+='<div class="card"><h2>1. 你的名字</h2><div class="row"><input type="text" id="my-name" maxlength="20" placeholder="例如：曉恩" value="'+esc(ui.myName)+'" style="flex:1;min-width:160px"></div>';
   h+='<label for="my-note" class="tip">其他固定行程或備註（選填）</label><textarea id="my-note" maxlength="300" placeholder="例如：1 月中可能出差">'+esc(ui.myNote)+'</textarea>';
   h+='<div class="tip">名字和備註只有主辦人看得到。其他人在結果頁只會看到人數。</div>';
-  h+='<details><summary>換手機或電腦要繼續改？用你的專屬連結</summary><div class="tip" style="margin-top:8px">用這個連結打開，才能修改你填過的內容。請自己留著，不要傳給別人。</div><div class="row"><input type="text" id="my-link" readonly value="'+esc(myLink())+'" style="flex:1;min-width:200px"><button class="btn ghost" data-act="copylink">複製</button><span class="tip" id="link-msg"></span></div></details></div>';
+  h+='<div class="tip">'+(ui.binding?'讀取中…':(ui.boundKey?(ui.boundSaved?'已讀出「'+esc(ui.boundRaw)+'」之前填的內容，可以繼續修改。':'第一次填寫，點完會自動儲存。'):'先填名字。之後換手機或電腦，輸入同樣的名字就會讀出你填過的內容。'))+'</div></div>';
 
   h+='<div class="card"><h2>2. 固定行程</h2><div class="tip">可選的時間：平日 19:00–22:00、週末與國定假日 9:00–22:00，每小時一格。先設好固定行程，日曆會自動標成不行（紅色虛線框），某天例外再點掉就好。</div>';
   h+='<h3>不在的日期（出國、出差、旅行）</h3><div class="tip">選開始和結束日期，範圍內每一天的所有時段都會變成不行。</div>';
   h+='<div class="row"><input type="date" id="aw-f" aria-label="開始日期" min="'+S.config.start+'" max="'+S.config.end+'" value="'+esc(ui.awF)+'"><span class="tip">到</span><input type="date" id="aw-t" aria-label="結束日期" min="'+S.config.start+'" max="'+S.config.end+'" value="'+esc(ui.awT)+'">'+
-     '<input type="text" id="aw-title" maxlength="30" placeholder="原因（選填），例如：出國" value="'+esc(ui.awTitle)+'" style="flex:1;min-width:140px"><button class="btn ghost" data-act="addaway">加入</button></div>';
+     '<input type="text" id="aw-title" maxlength="30" placeholder="原因（選填），例如：出國" value="'+esc(ui.awTitle)+'" style="flex:1;min-width:140px">'+(owner?'<label class="row tip"><input type="checkbox" id="aw-all"'+(ui.awAll?' checked':'')+'> 七個人全部避開</label>':'')+'<button class="btn ghost" data-act="addaway">加入</button></div>';
   if(p.away.length)h+='<div class="chips">'+p.away.map(function(a,i){var df=dayOf(a.f),dt=dayOf(a.t);return '<button class="chip no-chip" data-act="rmaway" data-v="'+i+'">'+(a.title?esc(a.title)+'：':'')+(df?label(df):a.f)+(a.t!==a.f?' ～ '+(dt?label(dt):a.t):'')+' ✕</button>';}).join('')+'</div>';
   var A=allTpl();
   if(A.length)h+='<h3>全員都不行</h3><div class="chips">'+A.map(function(t){return '<span class="chip no-chip">'+esc(t.title)+'：'+t.rules.map(ruleText).join('、')+'</span>';}).join('')+'</div>';
@@ -464,10 +461,10 @@ function errText(e){var c=e&&e.code;if(c==='forbidden')return '主辦人連結�
 function refresh(){return api('GET','state').then(applyState);}
 function save(quiet){
   if(autoT){clearTimeout(autoT);autoT=null;}
-  var nm=ui.myName.trim();
-  if(!nm){if(quiet)return;flash('請先在最上面填你的名字',true);var el=document.getElementById('my-name');if(el){el.focus();el.scrollIntoView({block:'center'});}return;}
+  var nm=ui.boundRaw;
+  if(!ui.boundKey){if(quiet)return;flash('請先在最上面填你的名字',true);var el=document.getElementById('my-name');if(el){el.focus();el.scrollIntoView({block:'center'});}return;}
   ui.busy=true;if(!quiet)render();
-  api('POST','save',{token:TOKEN,name:nm,note:ui.myNote.trim(),slot:ui.draft}).then(function(){
+  api('POST','save',{name:nm,note:ui.myNote.trim(),slot:ui.draft}).then(function(){
     ui.busy=false;clearDraft();ui.dirty=false;return refresh();
   }).then(function(){var tm=new Date();flash((quiet?'已自動儲存 ':'已儲存！')+tm.getHours()+':'+pad(tm.getMinutes())+(quiet?'':'，可以到「看結果」查看。'));}).catch(function(e){ui.busy=false;flash('儲存失敗：'+errText(e),true);if(!(e&&(e.code==='name_required'||e.code==='bad_token'))){if(autoT)clearTimeout(autoT);autoT=setTimeout(function(){autoT=null;save(true);},30000);}});
 }
@@ -488,24 +485,26 @@ function createTpl(){
     reset();render();saveDraft();render();return;
   }
   var mine=(S.common[uid]||[]).concat([item]);
-  api('POST','common',{token:TOKEN,items:mine}).then(function(){
+  api('POST','common',{name:ui.boundRaw,items:mine}).then(function(){
     ui.draft.joined.push(uid+':'+item.id);reset();saveDraft();
-    if(ui.myName.trim())save();else{refresh();flash('已建立！填好名字後按「儲存」');}
+    save();
   }).catch(function(e){flash('建立失敗：'+errText(e),true);});
 }
 function delTpl(key){
   var t=TPL[key];if(!t)return;
   var items=(S.common[t.owner]||[]).filter(function(it){return it.id!==t.id;});
-  var p=t.owner===uid?api('POST','common',{token:TOKEN,items:items}):api('POST','admin',{action:'common',id:t.owner,items:items});
+  var p=t.owner===uid?api('POST','common',{name:ui.boundRaw,items:items}):api('POST','admin',{action:'common',id:t.owner,items:items});
   p.then(function(){rm(ui.draft.joined,key);saveDraft();return refresh();}).then(function(){flash('已刪除「'+t.title+'」');}).catch(function(e){flash('刪除失敗：'+errText(e),true);});
 }
 
 // ---- cell painting ----
 function cellAt(el){var c=el&&el.closest?el.closest('[data-cell]'):null;return c;}
 function applyCell(c,st){var q=c.getAttribute('data-cell').split('|'),d=dayOf(q[0]),hh=+q[1];if(!d||closed(d,hh))return null;var cur=stateOf(ui.draft,d,hh);if(st==null)st=nextState(cur);if(cur!==st)setState(ui.draft,d,hh,st);return st;}
+function needName(){if(ui.boundKey)return false;flash(ui.binding?'讀取中，請稍等一下':'請先在最上面填你的名字',true);var el=document.getElementById('my-name');if(el){el.focus();el.scrollIntoView({block:'center'});}return true;}
 document.addEventListener('pointerdown',function(ev){
   var c=cellAt(ev.target);if(!c)return;
   ev.preventDefault();
+  if(needName())return;
   var st=applyCell(c,null);if(st==null)return;
   ui.msg='';
   if(ev.pointerType==='mouse')paint={st:st,last:c.getAttribute('data-cell')};
@@ -527,6 +526,8 @@ document.addEventListener('click',function(ev){
   var t=ev.target.closest('[data-act]');if(!t)return;
   var act=t.getAttribute('data-act'),v=t.getAttribute('data-v'),p=ui.draft;
   if(act==='tab'){ui.tab=v;ui.msg='';render();return;}
+  var allOnly=owner&&((act==='addaway'&&ui.awAll)||(act==='createtpl'&&ui.nt.scope==='all'));
+  if(!allOnly&&['allday','weekly','join','addaway','rmaway','rmmyrule','createtpl','save'].indexOf(act)>=0&&needName())return;
   if(act==='allday'){var d2=dayOf(v),op=d2.hours.filter(function(hh){return !closed(d2,hh);}),allNo=op.every(function(hh){return isNo(p,d2,hh);});
     op.forEach(function(hh){setState(p,d2,hh,allNo?'yes':'no');});ui.msg='';saveDraft();render();return;}
   if(act==='weekly'){if(has(p.weekly,v))rm(p.weekly,v);else p.weekly.push(v);
@@ -550,6 +551,13 @@ document.addEventListener('click',function(ev){
     if(at<af){var tmp=af;af=at;at=tmp;}
     if(af<S.config.start)af=S.config.start;if(at>S.config.end)at=S.config.end;
     if(af>at){flash('這段日期不在排會議的範圍內',true);return;}
+    if(ui.awAll&&owner){
+      var acfg=clone(S.config),aitem={id:newId(),title:ui.awTitle.trim()||'全員避開',rules:[{d1:af,d2:at,f:0,t:24}]};
+      acfg.allTpl=(Array.isArray(acfg.allTpl)?acfg.allTpl:[]).concat([aitem]);
+      ui.awF='';ui.awT='';ui.awTitle='';ui.awAll=false;
+      adminConfig(acfg).then(function(){flash('已設定：七個人全部避開 '+md(af)+(at!==af?'–'+md(at):''));}).catch(function(e){flash('設定失敗：'+errText(e),true);});
+      return;
+    }
     p.away.push({f:af,t:at,title:ui.awTitle.trim()});
     p.except=p.except.filter(function(k){var dk=k.split('|')[0];return !(dk>=af&&dk<=at);});
     ui.awF='';ui.awT='';ui.awTitle='';saveDraft();render();return;}
@@ -575,7 +583,7 @@ document.addEventListener('click',function(ev){
 });
 document.addEventListener('input',function(ev){
   var id=ev.target.id;
-  if(id==='my-name'){ui.myName=ev.target.value;saveDraft();}
+  if(id==='my-name'){ui.myName=ev.target.value;bindSoon(900);}
   else if(id==='my-note'){ui.myNote=ev.target.value;saveDraft();}
   else if(id==='nt-title'){ui.nt.title=ev.target.value;}
   else if(id==='aw-title'){ui.awTitle=ev.target.value;}
@@ -585,6 +593,8 @@ document.addEventListener('input',function(ev){
 document.addEventListener('toggle',function(ev){if(ev.target&&ev.target.id==='nt-box')ui.nt.open=ev.target.open;},true);
 document.addEventListener('change',function(ev){
   var id=ev.target.id,v=ev.target.value;
+  if(id==='aw-all'){ui.awAll=ev.target.checked;return;}
+  if(id==='my-name'){ui.myName=v;bindSoon(0);return;}
   if(ev.target.name==='nt-scope'){ui.nt.scope=v;render();}
   else if(id==='nt-allday'){ui.nt.allday=ev.target.checked;render();}
   else if(id==='nt-d1'){ui.nt.d1=v;if(!ui.nt.d2||ui.nt.d2<v){ui.nt.d2=v;var e3=document.getElementById('nt-d2');if(e3)e3.value=v;}}else if(id==='nt-d2'){ui.nt.d2=v;}
@@ -592,13 +602,36 @@ document.addEventListener('change',function(ev){
 });
 
 // ---- startup ----
-function startDraft(server){
-  var d=readDraft();
-  if(d&&d.p){ui.draft=norm(d.p);if(d.n&&!ui.myName)ui.myName=d.n;if(d.note&&!ui.myNote)ui.myNote=d.note;
-    if(server===null||JSON.stringify(norm(server))!==JSON.stringify(ui.draft)){setTimeout(scheduleAuto,0);}}
-  else ui.draft=server?norm(server):blank();
+function startDraft(){ui.draft=blank();}
+var bindT=null;
+function bindSoon(ms){if(bindT)clearTimeout(bindT);bindT=setTimeout(function(){bindT=null;bind();},ms);}
+function bind(){
+  var raw=ui.myName.trim().replace(/\s+/g,' '),k=nkey(raw);
+  if(!k||k===ui.boundKey)return Promise.resolve();
+  if(autoT){clearTimeout(autoT);autoT=null;}
+  var prevSaved=ui.boundSaved,prevKey=ui.boundKey;
+  ui.binding=true;ui.boundRaw=raw;render();
+  return api('GET','state').then(function(st){
+    ui.binding=false;
+    if(nkey(ui.myName)!==k)return;
+    ui.boundKey=k;lsSet('mt-name',raw);
+    applyState(st,true);
+    var me=st.me||{},server=me.saved?S.people[me.id]:null,d=readDraft();
+    var local=(d&&d.k===k&&d.p)?norm(d.p):null;
+    if(server){
+      ui.boundSaved=true;ui.myNote=me.note||'';
+      if(local&&JSON.stringify(local)!==JSON.stringify(norm(server))){ui.draft=local;if(d.note!=null)ui.myNote=d.note;render();scheduleAuto();}
+      else{ui.draft=norm(server);ui.msg='已讀出「'+raw+'」之前填的內容';ui.msgCls='good';render();}
+    } else {
+      ui.boundSaved=false;
+      if(local){ui.draft=local;if(d.note!=null)ui.myNote=d.note;}
+      else if(prevKey&&prevSaved){ui.draft=blank();ui.myNote='';}
+      ui.msg='';render();
+      if(count(ui.draft,'no')||count(ui.draft,'mb')||ui.draft.rules.length||ui.draft.away.length||ui.draft.joined.length)scheduleAuto();
+    }
+  }).catch(function(){ui.binding=false;ui.boundRaw=prevKey?ui.boundRaw:'';flash('讀取失敗，請稍後再試',true);});
 }
-function applyState(st){
+function applyState(st,noRender){
   var c=clone(CFG_DEF),x=st.config||{};
   ['total','meetings','len'].forEach(function(k){if(typeof x[k]==='number')c[k]=x[k];});
   if(Array.isArray(x.allTpl))c.allTpl=x.allTpl;
@@ -606,15 +639,15 @@ function applyState(st){
   var m={};Object.keys(st.slots||{}).forEach(function(k){m[k]=norm(st.slots[k]);});S.people=m;
   S.common=st.common||{};rebuildTpl();
   owner=!!st.admin;S.names=st.names||{};
-  if(st.me){uid=st.me.id;if(!ui.nameLoaded){ui.nameLoaded=true;if(!ui.myName)ui.myName=st.me.name||'';if(!ui.myNote)ui.myNote=st.me.note||'';}}
-  if(ui.loading){ui.loading=false;startDraft(S.people[uid]||null);}
+  if(st.me){uid=st.me.id;if(st.me.saved)ui.boundSaved=true;}
+  if(ui.loading){ui.loading=false;startDraft();var sn=lsGet('mt-name');if(sn&&!ui.myName){ui.myName=sn;setTimeout(bind,0);}}
   else if(ui.offline){ui.offline=false;ui.offReason='';var dd=readDraft();if(dd&&dd.p)setTimeout(scheduleAuto,0);}
   if(ADMIN&&!owner&&!ui.adminWarned){ui.adminWarned=true;ui.msg='主辦人連結無效，請確認網址完整';ui.msgCls='warn';}
-  if(!paint)render();
+  if(!paint&&!noRender)render();
 }
 function load(){
   refresh().catch(function(){
-    if(ui.loading){ui.loading=false;ui.offline=true;ui.offReason='伺服器還沒準備好，現在填的內容只會暫存在這台裝置，其他人看不到。請稍後重新整理，或告訴主辦人。';startDraft(null);render();}
+    if(ui.loading){ui.loading=false;ui.offline=true;ui.offReason='伺服器還沒準備好，請稍後重新整理，或告訴主辦人。';startDraft();render();}
   });
 }
 render();load();

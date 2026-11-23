@@ -8,10 +8,17 @@ async function sha(s: string): Promise<string> {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
-async function idOf(token: unknown): Promise<string | null> {
-  if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
-  return (await sha("person:" + token)).slice(0, 20);
+function cleanName(n: unknown): string {
+  return typeof n === "string" ? n.trim().replace(/\s+/g, " ").slice(0, 20) : "";
+}
+async function idOf(name: unknown): Promise<string | null> {
+  const n = cleanName(name);
+  if (!n) return null;
+  return (await sha("name:" + n.replace(/\s+/g, "").toLowerCase())).slice(0, 20);
+}
+function headerName(req: Request): string {
+  const raw = req.headers.get("x-name") || "";
+  try { return decodeURIComponent(raw); } catch { return ""; }
 }
 async function isAdmin(req: Request): Promise<boolean> {
   const k = req.headers.get("x-admin") || "";
@@ -58,7 +65,7 @@ export default async (req: Request, context: Context) => {
   try {
     if (req.method === "GET" && route === "state") {
       const admin = await isAdmin(req);
-      const myId = await idOf(req.headers.get("x-token"));
+      const myId = await idOf(headerName(req));
       const [config, people, common] = await Promise.all([readConfig(), readAll("people/"), readAll("common/")]);
       const slots: Record<string, any> = {};
       const names: Record<string, any> = {};
@@ -73,16 +80,15 @@ export default async (req: Request, context: Context) => {
     if (!body) return json({ error: "bad_request" }, 400);
 
     if (route === "save") {
-      const id = await idOf(body.token);
-      if (!id) return json({ error: "bad_token" }, 400);
-      const name = String(body.name || "").trim().slice(0, 20);
-      if (!name) return json({ error: "name_required" }, 400);
+      const name = cleanName(body.name);
+      const id = await idOf(name);
+      if (!id) return json({ error: "name_required" }, 400);
       await store().setJSON("people/" + id, { name, note: String(body.note || "").slice(0, 300), slot: slotOf(body.slot), updated: new Date().toISOString() });
       return json({ ok: true, id });
     }
     if (route === "common") {
-      const id = await idOf(body.token);
-      if (!id) return json({ error: "bad_token" }, 400);
+      const id = await idOf(body.name);
+      if (!id) return json({ error: "name_required" }, 400);
       await store().setJSON("common/" + id, { items: itemsOf(body.items) });
       return json({ ok: true });
     }
