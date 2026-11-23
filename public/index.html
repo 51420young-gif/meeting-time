@@ -164,7 +164,7 @@ function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
   if(me&&/^[A-Za-z0-9_-]{20,64}$/.test(me))lsSet('mt-token',me);
   if(ad)lsSet('mt-admin',ad);
   TOKEN=lsGet('mt-token');
-  if(!TOKEN||!/^[A-Za-z0-9_-]{20,64}$/.test(TOKEN)){var a=new Uint8Array(18);crypto.getRandomValues(a);TOKEN=Array.from(a,function(b){return 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b%64];}).join('');lsSet('mt-token',TOKEN);}
+  if(!TOKEN||!/^[A-Za-z0-9_-]{20,64}$/.test(TOKEN)){var a=new Uint8Array(24);crypto.getRandomValues(a);TOKEN=Array.from(a,function(b){return 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b%64];}).join('');lsSet('mt-token',TOKEN);}
   ADMIN=lsGet('mt-admin')||'';
   if(me||ad){try{history.replaceState(null,'',location.pathname);}catch(e){}}
 })();
