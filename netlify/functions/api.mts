@@ -8,7 +8,7 @@ async function sha(s: string): Promise<string> {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
-const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
+const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 async function idOf(token: unknown): Promise<string | null> {
   if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
   return (await sha("person:" + token)).slice(0, 20);
